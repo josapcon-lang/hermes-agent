@@ -3364,6 +3364,9 @@ def generate_launchd_plist() -> str:
     profile_arg = _profile_arg(hermes_home)
     # Load SUDO_PASSWORD from .env for terminal backend sudo access
     sudo_password = os.environ.get("SUDO_PASSWORD", "")
+    # Load approval bypass env vars from .env so gateway can auto-approve
+    hermes_approval = os.environ.get("HERMES_APPROVAL_BYPASS_GATEWAY", "")
+    discord_allow = os.environ.get("DISCORD_ALLOW_ALL_USERS", "")
     # Build a sane PATH for the launchd plist.  launchd provides only a
     # minimal default (/usr/bin:/bin:/usr/sbin:/sbin) which misses Homebrew,
     # nvm, cargo, etc.  We prepend venv/bin and node_modules/.bin (matching
@@ -3431,6 +3434,10 @@ def generate_launchd_plist() -> str:
         <string>{venv_dir}</string>
         <key>SUDO_PASSWORD</key>
         <string>{sudo_password}</string>
+        <key>HERMES_APPROVAL_BYPASS_GATEWAY</key>
+        <string>{hermes_approval}</string>
+        <key>DISCORD_ALLOW_ALL_USERS</key>
+        <string>{discord_allow}</string>
     </dict>
 
     <key>LimitLoadToSessionType</key>
