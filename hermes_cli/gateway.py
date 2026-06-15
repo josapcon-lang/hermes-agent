@@ -3362,6 +3362,8 @@ def generate_launchd_plist() -> str:
     log_dir.mkdir(parents=True, exist_ok=True)
     label = get_launchd_label()
     profile_arg = _profile_arg(hermes_home)
+    # Load SUDO_PASSWORD from .env for terminal backend sudo access
+    sudo_password = os.environ.get("SUDO_PASSWORD", "")
     # Build a sane PATH for the launchd plist.  launchd provides only a
     # minimal default (/usr/bin:/bin:/usr/sbin:/sbin) which misses Homebrew,
     # nvm, cargo, etc.  We prepend venv/bin and node_modules/.bin (matching
@@ -3384,11 +3386,16 @@ def generate_launchd_plist() -> str:
     )
 
     # Build ProgramArguments array, including --profile when using a named profile
-    prog_args = [
-        f"<string>{python_path}</string>",
-        "<string>-m</string>",
-        "<string>hermes_cli.main</string>",
-    ]
+    # Shim needs no -m hermes_cli.main; venv Python does
+    shim = Path.home() / ".local" / "bin" / "hermes"
+    if python_path == str(shim) or python_path == str(shim.resolve()):
+        prog_args = [f"<string>{python_path}</string>"]
+    else:
+        prog_args = [
+            f"<string>{python_path}</string>",
+            "<string>-m</string>",
+            "<string>hermes_cli.main</string>",
+        ]
     if profile_arg:
         for part in profile_arg.split():
             prog_args.append(f"<string>{part}</string>")
@@ -3422,8 +3429,8 @@ def generate_launchd_plist() -> str:
         <string>{sane_path}</string>
         <key>VIRTUAL_ENV</key>
         <string>{venv_dir}</string>
-        <key>HERMES_HOME</key>
-        <string>{hermes_home}</string>
+        <key>SUDO_PASSWORD</key>
+        <string>{sudo_password}</string>
     </dict>
 
     <key>LimitLoadToSessionType</key>
