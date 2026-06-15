@@ -1158,6 +1158,11 @@ def load_gateway_config() -> GatewayConfig:
                     for _telegram_extra_key, _telegram_extra_value in _telegram_extra.items():
                         _plat_extra.setdefault(_telegram_extra_key, _telegram_extra_value)
 
+            discord_cfg = yaml_cfg.get("discord", {})
+            if isinstance(discord_cfg, dict):
+                if "allow_bots" in discord_cfg and not os.getenv("DISCORD_ALLOW_BOTS"):
+                    os.environ["DISCORD_ALLOW_BOTS"] = str(discord_cfg["allow_bots"]).lower()
+
             whatsapp_cfg = yaml_cfg.get("whatsapp", {})
             if isinstance(whatsapp_cfg, dict):
                 if "require_mention" in whatsapp_cfg and not os.getenv("WHATSAPP_REQUIRE_MENTION"):

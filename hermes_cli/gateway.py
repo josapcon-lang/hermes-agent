@@ -2203,6 +2203,11 @@ def _detect_venv_dir() -> Path | None:
 
 
 def get_python_path() -> str:
+    # Prefer shim (pip-installed hermes) over venv python to avoid auth issues
+    from pathlib import Path
+    shim = Path.home() / ".local" / "bin" / "hermes"
+    if shim.exists():
+        return str(shim)
     venv = _detect_venv_dir()
     if venv is not None:
         if is_windows():
@@ -3272,7 +3277,13 @@ def _gateway_run_command() -> list[str]:
     Profile-aware: honors the active HERMES_HOME via `_profile_arg()` so the
     detached fallback launches into the same profile as the CLI invocation.
     """
-    cmd = [get_python_path(), "-m", "hermes_cli.main"]
+    python_path = get_python_path()
+    # If shim is returned, use it directly without -m hermes_cli.main
+    shim = Path.home() / ".local" / "bin" / "hermes"
+    if python_path == str(shim) or python_path == str(shim.resolve()):
+        cmd = [str(shim)]
+    else:
+        cmd = [python_path, "-m", "hermes_cli.main"]
     profile_arg = _profile_arg()
     if profile_arg:
         cmd.extend(profile_arg.split())

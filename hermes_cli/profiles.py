@@ -329,11 +329,29 @@ def validate_profile_name(name: str) -> None:
 
 
 def get_profile_dir(name: str) -> Path:
-    """Resolve a profile name to its HERMES_HOME directory."""
+    """Resolve a profile name to its HERMES_HOME directory.
+
+    Named profiles canonically live under ``~/.hermes/profiles/<name>``.
+    Older/local experiments may have left stray root-level directories like
+    ``~/.hermes/sellersori_bot``; do not let those shadow the canonical profile
+    when ``profiles/<name>`` exists.
+    """
     canon = normalize_profile_name(name)
     if canon == "default":
         return _get_default_hermes_home()
-    return _get_profiles_root() / canon
+
+    profiles_dir = _get_profiles_root() / canon
+    if profiles_dir.is_dir():
+        return profiles_dir
+
+    # Backward compatibility for very old installs that truly stored a named
+    # profile at ~/.hermes/<name>. This is only used when no canonical profile
+    # exists, so a stray scaffold folder cannot hijack an existing profile.
+    root_dir = _get_default_hermes_home() / canon
+    if root_dir.is_dir():
+        return root_dir
+
+    return profiles_dir
 
 
 def profile_exists(name: str) -> bool:
@@ -1438,9 +1456,9 @@ def set_active_profile(name: str) -> None:
 
 def get_active_profile_name() -> str:
     """Infer the current profile name from HERMES_HOME.
-
     Returns ``"default"`` if HERMES_HOME is not set or points to ``~/.hermes``.
     Returns the profile name if HERMES_HOME points into ``~/.hermes/profiles/<name>``.
+    Returns the profile name if HERMES_HOME points to ``~/.hermes/<name>`` (root-level profile).
     Returns ``"custom"`` if HERMES_HOME is set to an unrecognized path.
     """
     from hermes_constants import get_hermes_home
@@ -1454,6 +1472,15 @@ def get_active_profile_name() -> str:
     profiles_root = _get_profiles_root().resolve()
     try:
         rel = resolved.relative_to(profiles_root)
+        parts = rel.parts
+        if len(parts) == 1 and _PROFILE_ID_RE.match(parts[0]):
+            return parts[0]
+    except ValueError:
+        pass
+
+    # Check root-level profile (~/.hermes/<name>)
+    try:
+        rel = resolved.relative_to(default_resolved)
         parts = rel.parts
         if len(parts) == 1 and _PROFILE_ID_RE.match(parts[0]):
             return parts[0]
