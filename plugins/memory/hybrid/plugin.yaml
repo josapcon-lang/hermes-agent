@@ -1,0 +1,4 @@
+name: hybrid
+description: Fail-open Holographic operational memory with asynchronous Hindsight long-term memory
+version: 1.0.0
+kind: memory-provider
