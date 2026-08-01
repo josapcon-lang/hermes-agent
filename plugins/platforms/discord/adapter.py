@@ -5973,6 +5973,26 @@ class DiscordAdapter(BasePlatformAdapter):
             return bool(configured)
         return os.getenv("DISCORD_REQUIRE_MENTION", "true").lower() not in {"false", "0", "no", "off"}
 
+    def _discord_voice_bypass_mention(self) -> bool:
+        """Allow audio-only requests to pass the guild mention gate when opted in."""
+        configured = self.config.extra.get("voice_bypass_mention")
+        if configured is not None:
+            if isinstance(configured, str):
+                return configured.lower() not in {"false", "0", "no", "off", ""}
+            return bool(configured)
+        return os.getenv("DISCORD_VOICE_BYPASS_MENTION", "false").lower() in {
+            "true", "1", "yes", "on",
+        }
+
+    @staticmethod
+    def _message_has_audio_attachment(message: Any) -> bool:
+        """Return True when a message carries an audio MIME attachment."""
+        for att in list(getattr(message, "attachments", []) or []):
+            content_type = str(getattr(att, "content_type", "") or "").lower()
+            if content_type.startswith("audio/"):
+                return True
+        return False
+
     def _discord_allow_any_attachment(self) -> bool:
         """Return whether Discord attachments bypass the SUPPORTED_DOCUMENT_TYPES allowlist.
 
@@ -7484,7 +7504,11 @@ class DiscordAdapter(BasePlatformAdapter):
                 and not self._discord_thread_require_mention()
             )
 
-            if require_mention and not is_free_channel and not in_bot_thread:
+            voice_mention_exempt = (
+                self._discord_voice_bypass_mention()
+                and self._message_has_audio_attachment(message)
+            )
+            if require_mention and not is_free_channel and not in_bot_thread and not voice_mention_exempt:
                 if not self._self_is_explicitly_mentioned(message) and not mention_prefix:
                     return False
         # Auto-thread: when enabled, automatically create a thread for every

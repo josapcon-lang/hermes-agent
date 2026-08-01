@@ -74,6 +74,21 @@ def _make_adapter() -> DiscordAdapter:
     return DiscordAdapter(PlatformConfig(enabled=True, token="***"))
 
 
+def test_audio_attachment_can_bypass_mention_when_enabled():
+    adapter = DiscordAdapter(
+        PlatformConfig(
+            enabled=True,
+            token="***",
+            extra={"voice_bypass_mention": True},
+        )
+    )
+    message = SimpleNamespace(
+        attachments=[SimpleNamespace(content_type="audio/mp4")],
+    )
+    assert adapter._discord_voice_bypass_mention() is True
+    assert adapter._message_has_audio_attachment(message) is True
+
+
 def _make_attachment_with_read(payload: bytes) -> SimpleNamespace:
     """Attachment stub that exposes .read() — the happy-path primary."""
     return SimpleNamespace(

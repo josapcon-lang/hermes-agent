@@ -2519,7 +2519,16 @@ def _event_media_is_audio(event, index: int) -> bool:
 def _event_media_is_stt_input(event, index: int) -> bool:
     """True when an audio attachment should enter the automatic STT pipeline."""
     message_type = getattr(event, "message_type", None)
-    if message_type in {MessageType.AUDIO, MessageType.DOCUMENT}:
+    if message_type == MessageType.AUDIO:
+        try:
+            from tools.transcription_tools import _load_stt_config
+            stt_config = _load_stt_config()
+        except Exception:
+            stt_config = {}
+        if not bool(stt_config.get("transcribe_audio_attachments", False)):
+            return False
+        return _event_media_is_audio(event, index)
+    if message_type == MessageType.DOCUMENT:
         return False
     return (
         message_type == MessageType.VOICE
@@ -12742,9 +12751,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # mis-routed here as an image and the provider 400s.
                 if _event_media_is_image(event, i):
                     image_paths.append(path)
-                # MessageType.AUDIO = audio file attachment (e.g. .mp3, .m4a) — never STT
-                # MessageType.VOICE = voice message (Opus/OGG) — always STT
-                if event.message_type == MessageType.AUDIO:
+                # AUDIO files normally remain attachments. Opt-in STT supports
+                # iPhone .m4a uploads and webhook-relayed recordings.
+                if event.message_type == MessageType.AUDIO and not _event_media_is_stt_input(event, i):
                     audio_file_paths.append(path)
                 elif not _pending_stt_prepared and _event_media_is_stt_input(event, i):
                     audio_paths.append(path)

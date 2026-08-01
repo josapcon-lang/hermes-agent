@@ -18,12 +18,14 @@ populate media_types.
 """
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from gateway.platforms.base import MessageType
 from gateway.run import (
     _build_media_placeholder,
     _event_media_is_audio,
     _event_media_is_image,
+    _event_media_is_stt_input,
     _event_media_is_video,
 )
 
@@ -57,6 +59,15 @@ def test_audio_classified_per_attachment():
     assert _event_media_is_audio(evt, 0) is True
     assert _event_media_is_audio(evt, 1) is False
     assert _event_media_is_image(evt, 1) is True
+
+
+def test_audio_attachment_can_opt_in_to_stt():
+    evt = _evt(["/c/voice.m4a"], ["audio/mp4"], MessageType.AUDIO)
+    with patch(
+        "tools.transcription_tools._load_stt_config",
+        return_value={"transcribe_audio_attachments": True},
+    ):
+        assert _event_media_is_stt_input(evt, 0) is True
 
 
 def test_video_classified_per_attachment():

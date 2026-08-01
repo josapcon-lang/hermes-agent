@@ -98,6 +98,7 @@ def _safe_find_spec(module_name: str) -> bool:
 
 
 _HAS_FASTER_WHISPER = _safe_find_spec("faster_whisper")
+_HAS_MLX_WHISPER = _safe_find_spec("mlx_whisper")
 _HAS_OPENAI = _safe_find_spec("openai")
 _HAS_MISTRAL = _safe_find_spec("mistralai")
 _HAS_PILK = _safe_find_spec("pilk")
@@ -995,6 +996,15 @@ def _get_provider(stt_config: dict) -> str:
             )
             return "none"
 
+        if provider == "mlx":
+            if _HAS_MLX_WHISPER:
+                return "mlx"
+            logger.warning(
+                "STT provider 'mlx' configured but mlx_whisper not installed "
+                "(pip install mlx-whisper)"
+            )
+            return "none"
+
         if provider == "local_command":
             if _has_local_command():
                 return "local_command"
@@ -1568,6 +1578,62 @@ def _transcribe_local(file_path: str, model_name: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error("Local transcription failed: %s", e, exc_info=True)
         return {"success": False, "transcript": "", "error": f"Local transcription failed: {e}"}
+
+
+# Global mlx-whisper model cache (in-process, persists across calls)
+_mlx_model = None
+_mlx_model_name = None
+
+
+def _transcribe_mlx(file_path: str, model_name: str) -> Dict[str, Any]:
+    """Transcribe using mlx-whisper on Apple Silicon GPU (in-process)."""
+    global _mlx_model, _mlx_model_name
+
+    if not _HAS_MLX_WHISPER:
+        return {"success": False, "transcript": "", "error": "mlx-whisper not installed"}
+
+    try:
+        import mlx_whisper
+
+        # Map model name to MLX HuggingFace repo
+        _MLX_MODEL_MAP = {
+            "tiny": "mlx-community/whisper-tiny-mlx",
+            "tiny.en": "mlx-community/whisper-tiny.en-mlx",
+            "base": "mlx-community/whisper-base-mlx",
+            "base.en": "mlx-community/whisper-base.en-mlx",
+            "small": "mlx-community/whisper-small-mlx",
+            "small.en": "mlx-community/whisper-small.en-mlx",
+            "medium": "mlx-community/whisper-medium-mlx",
+            "large-v3": "mlx-community/whisper-large-v3-mlx",
+        }
+        hf_repo = _MLX_MODEL_MAP.get(model_name, model_name)
+
+        # Language from config
+        stt_cfg = _load_stt_config()
+        local_cfg = stt_cfg.get("local") or {}
+        _forced_lang = local_cfg.get("language") or os.getenv(LOCAL_STT_LANGUAGE_ENV) or None
+
+        logger.info(
+            "Transcribing %s via mlx-whisper (%s, lang=%s)...",
+            Path(file_path).name, model_name, _forced_lang or "auto",
+        )
+
+        result = mlx_whisper.transcribe(
+            file_path,
+            language=_forced_lang,
+        )
+        transcript = result.get("text", "").strip()
+
+        logger.info(
+            "Transcribed %s via mlx-whisper (%s, %d chars)",
+            Path(file_path).name, model_name, len(transcript),
+        )
+
+        return {"success": True, "transcript": transcript, "provider": "mlx"}
+
+    except Exception as e:
+        logger.error("MLX transcription failed: %s", e, exc_info=True)
+        return {"success": False, "transcript": "", "error": f"MLX transcription failed: {e}"}
 
 
 def _prepare_local_audio(file_path: str, work_dir: str) -> tuple[Optional[str], Optional[str]]:
@@ -2290,6 +2356,13 @@ def _transcribe_prepared_audio(file_path: str, model: Optional[str] = None) -> D
             model or local_cfg.get("model", DEFAULT_LOCAL_MODEL)
         )
         return _transcribe_local(file_path, model_name)
+
+    if provider == "mlx":
+        local_cfg = stt_config.get("local") or {}
+        model_name = _normalize_local_model(
+            model or local_cfg.get("model", DEFAULT_LOCAL_MODEL)
+        )
+        return _transcribe_mlx(file_path, model_name)
 
     if provider == "local_command":
         local_cfg = stt_config.get("local") or {}
