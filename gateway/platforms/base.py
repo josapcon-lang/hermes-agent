@@ -4706,6 +4706,12 @@ class BasePlatformAdapter(ABC):
         does not migrate message IDs or route edits/deletes through the new
         adapter: those operations remain owned by the old transport.
         """
+        # Webhook delivery state is request-local and stored on the receiving
+        # adapter. Resolving a replacement adapter would lose _delivery_info
+        # and silently downgrade configured delivery to "log".
+        if self.platform == Platform.WEBHOOK:
+            return self
+
         runner = getattr(self, "gateway_runner", None)
         resolve = getattr(runner, "_adapter_for_source", None)
         if not callable(resolve):

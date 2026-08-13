@@ -374,6 +374,10 @@ class WebhookAdapter(BasePlatformAdapter):
 
         delivery = self._delivery_info.get(chat_id, {})
         deliver_type = delivery.get("deliver", "log")
+        logger.info(
+            "[webhook] DEBUG send chat=%s deliver=%r gateway_runner=%s delivery_info_keys=%s",
+            chat_id, deliver_type, self.gateway_runner is not None, list(self._delivery_info.keys())[-3:],
+        )
 
         if deliver_type == "log":
             logger.info("[webhook] Response for %s: %s", chat_id, content[:200])
@@ -1359,6 +1363,14 @@ class WebhookAdapter(BasePlatformAdapter):
         self, platform_name: str, content: str, delivery: dict
     ) -> SendResult:
         """Route response to another platform (telegram, discord, etc.)."""
+        logger.info(
+            "[webhook] DEBUG cross_platform target=%s runner=%s adapters_keys=%s profile_adapters=%s deliver_extra=%s",
+            platform_name,
+            self.gateway_runner is not None,
+            list(self.gateway_runner.adapters.keys()) if self.gateway_runner else None,
+            {k: list(v.keys()) for k, v in (getattr(self.gateway_runner, "_profile_adapters", None) or {}).items()} if self.gateway_runner else None,
+            delivery.get("deliver_extra"),
+        )
         if not self.gateway_runner:
             return SendResult(
                 success=False,
@@ -1409,4 +1421,21 @@ class WebhookAdapter(BasePlatformAdapter):
         if thread_id:
             metadata = {"thread_id": thread_id}
 
-        return await adapter.send(chat_id, content, metadata=metadata)
+        try:
+            async with asyncio.timeout(30):
+                return await adapter._send_with_retry(
+                    chat_id=chat_id,
+                    content=content,
+                    metadata=metadata,
+                )
+        except TimeoutError:
+            logger.error(
+                "[webhook] Cross-platform delivery to %s timed out "
+                "(chat_id=%s)",
+                platform_name,
+                chat_id,
+            )
+            return SendResult(
+                success=False,
+                error=f"{platform_name} delivery timed out",
+            )

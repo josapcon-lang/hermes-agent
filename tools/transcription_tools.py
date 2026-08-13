@@ -1621,8 +1621,34 @@ def _transcribe_mlx(file_path: str, model_name: str) -> Dict[str, Any]:
         result = mlx_whisper.transcribe(
             file_path,
             language=_forced_lang,
+            # Whisper defaults (temperature sweep, standard thresholds) with
+            # previous-text conditioning OFF — kills the single-token
+            # degeneration loop ("감 감 감…") WITHOUT suppressing real speech.
+            # Verified 2026-08-02: strict knobs (temperature=0,
+            # no_speech_threshold=0.01) returned empty on genuine Korean
+            # utterances; this set keeps them AND filters silence.
+            temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+            no_speech_threshold=0.6,
+            logprob_threshold=-1.0,
+            compression_ratio_threshold=2.4,
+            condition_on_previous_text=False,
         )
         transcript = result.get("text", "").strip()
+
+        # Token-dominance filter: collapse degenerate single-token loops
+        # (e.g. "감 감 감 감…", "Top Top Top…") that pass language-agnostic
+        # phrase lists. Mirrors the verified mlx-whisper-stt shim behaviour.
+        if transcript:
+            import re as _re
+            tokens = _re.findall(r"\S+", transcript)
+            if tokens:
+                unique = set(tokens)
+                if len(unique) / len(tokens) < 0.30:
+                    logger.info(
+                        "Filtered degenerate mlx transcript (token dominance %.2f): %r",
+                        len(unique) / len(tokens), transcript[:80],
+                    )
+                    transcript = ""
 
         logger.info(
             "Transcribed %s via mlx-whisper (%s, %d chars)",

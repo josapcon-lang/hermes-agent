@@ -2895,6 +2895,17 @@ class DiscordAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> SendResult:
+        import logging as _l
+        import asyncio as _a
+        _cl_loop = getattr(self._client, "loop", None) if self._client else None
+        _cur_loop = _a.get_running_loop()
+        _l.getLogger("hermes_plugins.discord_platform.adapter").info(
+            "[Discord] DEBUG send() entered chat=%s same_loop=%s client_loop_id=%s cur_loop_id=%s",
+            chat_id,
+            _cl_loop is _cur_loop,
+            id(_cl_loop) if _cl_loop else None,
+            id(_cur_loop),
+        )
         """Send a message to a Discord channel or thread.
 
         When metadata contains a thread_id, the message is sent to that
@@ -2911,21 +2922,29 @@ class DiscordAdapter(BasePlatformAdapter):
             thread_id = None
             if metadata and metadata.get("thread_id"):
                 thread_id = metadata["thread_id"]
+            _l.getLogger("hermes_plugins.discord_platform.adapter").info(
+                "[Discord] DEBUG send() meta thread_id=%s client_ready=%s",
+                thread_id, self._client.is_ready() if self._client else False,
+            )
             nonconversational = _metadata_marks_nonconversational(metadata)
             final_delivery = bool(metadata and metadata.get("notify"))
 
             if thread_id:
                 # Fetch the thread directly — threads are addressed by their own ID.
                 channel = self._client.get_channel(int(thread_id))
+                _l.getLogger("hermes_plugins.discord_platform.adapter").info("[Discord] DEBUG send() thread get_channel=%s", channel is not None)
                 if not channel:
                     channel = await self._client.fetch_channel(int(thread_id))
+                    _l.getLogger("hermes_plugins.discord_platform.adapter").info("[Discord] DEBUG send() thread fetch_channel=%s", channel is not None)
                 if not channel:
                     return SendResult(success=False, error=f"Thread {thread_id} not found")
             else:
                 # Get the parent channel
                 channel = self._client.get_channel(int(chat_id))
+                _l.getLogger("hermes_plugins.discord_platform.adapter").info("[Discord] DEBUG send() chat get_channel=%s", channel is not None)
                 if not channel:
                     channel = await self._client.fetch_channel(int(chat_id))
+                    _l.getLogger("hermes_plugins.discord_platform.adapter").info("[Discord] DEBUG send() chat fetch_channel=%s", channel is not None)
                 if not channel:
                     return SendResult(success=False, error=f"Channel {chat_id} not found")
 
